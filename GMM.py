@@ -2,32 +2,17 @@ import numpy as np
 import cv2 as cv
 import os
 from numpy.linalg import norm, inv
-from pyculib import blas
+from scipy.stats import multivariate_normal as mv_norm
 import time
 
-init_weight = [0.7, 0.1, 0.1, 0.1]
+
+init_weight = [0.75, 0.10, 0.06, 0.04, 0.03, 0.02]
 init_u = np.zeros(3)
 # initial Covariance matrix
-init_sigma = 225*np.eye(3)
-init_alpha = 0.01
+init_sigma = 30*np.eye(3)
+init_alpha = 0.005
 # prevent deviding 0 for stability
 epsilon = 0.00000001
-
-# class Gaussian():
-#     def __init__(self, u, sigma):
-#         self.u = u
-#         self.sigma = sigma
-#
-#
-# class GaussianMat():
-#     def __init__(self, shape, k):
-#         self.shape = shape
-#         self.k = k
-#         # initialize Gaussian distribution
-#         self.mat = np.array([[[Gaussian(init_u, init_sigma) for i in range(k)] for j in range(shape[1])]
-#                              for l in range(shape[0])])
-#         # intialize weight, it could be [1,0,0,0]，but we choose [0.7,0.1,0.1,0.1] for stability
-#         self.weight = np.array([[[0.7, 0.1, 0.1, 0.1] for j in range(shape[1])] for l in range(shape[0])])
 
 
 class GMM():
@@ -42,7 +27,6 @@ class GMM():
         self.sigma = None
         self.K = None
         self.B = None
-        self.weight_order = None
 
     def check(self, pixel, mu, sigma):
         '''
@@ -59,7 +43,7 @@ class GMM():
         else:
             return False
 
-    def train(self, K=4):
+    def train(self, K=6):
         '''
         train model
         '''
@@ -78,8 +62,8 @@ class GMM():
                              for i in range(img_shape[0])])
         self.sigma = np.array([[[init_sigma for k in range(self.K)] for j in range(img_shape[1])]
                              for i in range(img_shape[0])])
+
         self.B = np.ones(self.img_shape[0:2], dtype=np.int)
-        self.weight_order = np.zeros(self.mu.shape[0:-1], dtype=np.int)
         for i in range(img_shape[0]):
             for j in range(img_shape[1]):
                 for k in range(self.K):
@@ -97,15 +81,15 @@ class GMM():
                     for k in range(K):
                         if self.check(img[i][j], self.mu[i][j][k], self.sigma[i][j][k]):
                             flag = 1
-                            M = 1
-                            self.weight[i][j][k] = self.weight[i][j][k] + self.alpha*(M - self.weight[i][j][k])
-                            u = self.mu[i][j][k]
+                            m = 1
+                            mu = self.mu[i][j][k]
                             sigma = self.sigma[i][j][k]
                             x = img[i][j].astype(np.float)
-                            delta = x - u
-                            self.mu[i][j][k] = u + M*(self.alpha / (self.weight[i][j][k]+epsilon))*delta
-                            self.sigma[i][j][k] = sigma + M*(self.alpha / (self.weight[i][j][k]+epsilon))\
-                                                            *(np.matmul(delta, delta.T)-sigma)
+                            delta = x - mu
+                            rho = self.alpha * mv_norm.pdf(img[i][j], mu, sigma)
+                            self.weight[i][j][k] = self.weight[i][j][k] + self.alpha*(m - self.weight[i][j][k])
+                            self.mu[i][j][k] = mu + rho*delta
+                            self.sigma[i][j][k] = sigma + rho*(np.matmul(delta, delta.T)-sigma)
                         else:
                             m=0
                             self.weight[i][j][k] = self.weight[i][j][k] + self.alpha*(m-self.weight[i][j][k])
@@ -122,29 +106,32 @@ class GMM():
                     s = sum([self.weight[i][j][k] for k in range(K)])
                     for k in range(K):
                         self.weight[i][j][k] /= s
-            print('img:{}'.format(img[100][100]))
-            print('weight:{}'.format(self.weight[100][100]))
+            # print('img:{}'.format(img[100][100]))
+            # print('weight:{}'.format(self.weight[100][100]))
+            print(self.sigma[100][100])
             self.reorder()
-            for i in range(self.K):
-                print('u:{}'.format(self.mu[100][100][i]))
+            # for i in range(self.K):
+            #     print('u:{}'.format(self.mu[100][100][i]))
 
 
     def reorder(self, T=0.75):
         '''
         reorder the estimated components based on the ratio pi / the norm of standard deviation.
         the first B components are chosen as background components
-        the default threshold is 0.75
+        the default threshold is 0.90
         '''
         for i in range(self.img_shape[0]):
             for j in range(self.img_shape[1]):
                 k_weight = self.weight[i][j]
-                k_norm = np.array([norm(np.sqrt(inv(self.simga[i][j][k]))) for k in range(self.K)])
+                k_norm = np.array([norm(np.sqrt(self.sigma[i][j][k])) for k in range(self.K)])
                 ratio = k_weight/k_norm
                 descending_order = np.argsort(-ratio)
-                self.weight_order[i][j] = descending_order
+                self.weight[i][j] = self.weight[i][j][descending_order]
+                self.mu[i][j] = self.mu[i][j][descending_order]
+                self.sigma[i][j] = self.sigma[i][j][descending_order]
                 cum_weight = 0
                 for index, order in enumerate(descending_order):
-                    cum_weight += self.weight[i][j][order]
+                    cum_weight += self.weight[i][j][index]
                     if cum_weight > T:
                         self.B[i][j] = index + 1
                         break
@@ -156,18 +143,14 @@ class GMM():
         if the pixel is background, both values of rgb will set to 255. Otherwise not change the value
         '''
         result = np.array(img)
-
         for i in range(img.shape[0]):
             for j in range(img.shape[1]):
                 for k in range(self.B[i][j]):
                     if self.check(img[i][j], self.mu[i][j][k], self.sigma[i][j][k]):
-                        # [255, 255, 255] is white, the background color will be set to white
-                        result[i][j] = [255, 255, 255]
+                        # [0, 0, 0] is black, the background color will be set black
+                        result[i][j] = [0, 0, 0]
                         break
-                # gaussian_pixel = self.g_mat.mat[i][j]
-                # for g in range(self.K):
-                #     if self.check(img[i][j], gaussian_pixel[g]) and self.g_mat.weight[i][j][g] > 0.25:
-                #         # [255, 255, 255] is white, the background color will be set to white
-                #         result[i][j] = [255, 255, 255]
-                #         continue
+                if (result[i][j][0] != 0) and (result[i][j][1] != 0) and (result[i][j][2] != 0):
+                    # foreground pixel will set white
+                    result[i][j] == [255, 255, 255]
         return result
