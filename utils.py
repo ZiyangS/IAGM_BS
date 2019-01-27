@@ -26,7 +26,7 @@ def compare_s_ljk(s_ljk, previous_s_ljk, s_rjk, nj, beta, w, sum):
 
 
 def Metropolis_Hastings_Sampling_posterior_sljk(s_ljk, s_rjk, nj, beta, w, sum):
-    n = 800
+    n = 500
     x = s_ljk
     vec = []
     vec.append(x)
@@ -62,7 +62,7 @@ def compare_s_rjk(s_rjk, previous_s_rjk, s_ljk, nj, beta, w, sum):
 
 
 def Metropolis_Hastings_Sampling_posterior_srjk(s_ljk, s_rjk, nj, beta, w, sum):
-    n = 800
+    n = 500
     x = s_rjk
     vec = []
     vec.append(x)
@@ -232,13 +232,10 @@ def draw_indicator(pvec):
 
 def get_pixel_list(img_list):
     height, width, dim = img_list[0].shape
-    # pixel_list = []
-    # frame_data = np.zeros((len(img_list), dim))
     pixel_list = np.zeros((height*width, len(img_list), dim))
     for i in range(height):
         for j in range(width):
             for index, img in enumerate(img_list):
                 pixel_list[width * i + j][index] = img[i][j]
-            # pixel_list.append(frame_data)
     return pixel_list
 
