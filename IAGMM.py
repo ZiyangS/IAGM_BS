@@ -94,7 +94,7 @@ class AGD_mixture_model():
         self.var_l = 1/self.s_l
         self.var_r = 1/self.s_r
 
-    def train(self, X, Nsamples=70):
+    def train(self, X, Nsamples=80):
         # record the start time
         ori_t = time.time()
         N, D = X.shape
@@ -256,7 +256,7 @@ class AGD_mixture_model():
         print("{}: time to complete main analysis = {} sec".format(time.asctime(), time.time() - ori_t))
 
 
-    def continue_train(self, X, train_num=300, beta=0.001):
+    def continue_train(self, X, train_num=300, beta=0.00033):
         match_num = 0
         for pixel in X:
             closest_dist = 10000
@@ -268,7 +268,6 @@ class AGD_mixture_model():
                         closest_dist = check(pixel, self.mu[k], self.s_l[k], self.s_r[k])
                         match = k
                     match_num += 1
-                    # break
             # a match found
             if match != -1:
                 mu = self.mu[match]
@@ -280,9 +279,9 @@ class AGD_mixture_model():
                 delta = x - mu
                 self.pi = (1 - beta) * self.pi
                 self.pi[match] += beta
-                # print(self.pi)
 
-                rho = beta * Asy_Gaussian_pdf(pixel, mu, s_l, s_r)
+                # rho = beta * Asy_Gaussian_pdf(pixel, mu, s_l, s_r)
+                rho = pixel * beta
                 self.mu[match] = mu + rho * delta
                 var_l = np.abs(var_l + rho * (np.matmul(delta, delta.T) - var_l))
                 var_r = np.abs(var_r + rho * (np.matmul(delta, delta.T) - var_r))
@@ -390,8 +389,9 @@ class IAGMM():
                 # foreground pixel will set white
                 result[index] = 255
                 detected_fg_num += 1
-        print("fg number")
-        print(detected_fg_num)
+        if detected_fg_num != 0:
+            print("fg number")
+            print(detected_fg_num)
         return result
 
 
@@ -411,12 +411,12 @@ class IAGMM():
                 file_name = os.path.join(self.data_dir, 'in%06d' % (index + 1) + '.jpg')
                 results_img_list.append(cv.imread(file_name))
         self.img_shape = img_list[0].shape
-        img_num_epoch = [len(img_list)//10] * 9
-        img_num_epoch.append( len(img_list) - 9*(len(img_list)//10))
-        results_img_num_epoch = [len(results_img_list)//10] * 9
-        results_img_num_epoch.append( len(results_img_list) - 9*(len(results_img_list)//10))
+        # img_num_epoch = [len(img_list)//10] * 9
+        # img_num_epoch.append( len(img_list) - 9*(len(img_list)//10))
+        # results_img_num_epoch = [len(results_img_list)//10] * 9
+        # results_img_num_epoch.append( len(results_img_list) - 9*(len(results_img_list)//10))
 
-        result_pixel = np.zeros((self.img_shape[0] * self.img_shape[1], len(results_img_list)), dtype=int)
+        res_list = np.zeros((len(results_img_list), self.img_shape[0] * self.img_shape[1]), dtype=int)
         # shape:240*360, 299//10, 3. 240*360 is the pixel shape for a frame, 299//10 is the number of train frames, 3 is RGB value
         pixel_list = get_pixel_list(img_list)
         # shape:240*360, 800//10, 3. 240*360 is the pixel shape for a frame, 800//10 is the number of test frames, 3 is RGB value
@@ -424,31 +424,31 @@ class IAGMM():
         pixel_zip = zip(pixel_list, test_pixel_list)
         X = pixel_list[0]
         test_X = test_pixel_list[0]
-        reserve_pixel = X[0].astype(np.float)
         for index, (pixel_data, test_pixel_data) in enumerate(pixel_zip):
-            # for example [3 3 3]
-            change = pixel_data[0].astype(np.float) - reserve_pixel
-            reserve_pixel = pixel_data[0].astype(np.float)
             if index == 0:
                 print("_____")
                 print(index)
                 self.agd_mat = AGD_Mat(self.img_shape, X)
                 self.agd_mat.agd_mixture_model.train(X)
+                # for i in range(self.agd_mat.agd_mixture_model.M):
+                #     self.agd_mat.agd_mixture_model.s_l[i] = np.array([30, 30 ,30])
+                #     self.agd_mat.agd_mixture_model.s_r[i] = np.array([0.03, 0.03 ,0.03])
                 self.reorder()
                 self.agd_mat.agd_mixture_model.var_l = 1/self.agd_mat.agd_mixture_model.s_l
                 self.agd_mat.agd_mixture_model.var_r = 1/self.agd_mat.agd_mixture_model.s_r
-                result_pixel[index] = self.infer(test_X)
+                result_pixel = self.infer(test_X)
+                for i, pixel in enumerate(result_pixel):
+                    res_list[i][index] = pixel
             # elif index == 41050:
             #     print("_____")
             #     print(index)
-            #     print(self.agd_mat.agd_mixture_model.pi)
             #     self.agd_mat.agd_mixture_model.continue_train(pixel_data, train_num=self.train_num)
-            #     print(self.agd_mat.agd_mixture_model.pi)
             #     self.reorder()
-            #     print(self.agd_mat.agd_mixture_model.pi)
             #     self.agd_mat.agd_mixture_model.var_l = 1 / self.agd_mat.agd_mixture_model.s_l
             #     self.agd_mat.agd_mixture_model.var_r = 1 / self.agd_mat.agd_mixture_model.s_r
-            #     result_pixel[index] = self.infer(test_pixel_data)
+            #     result_pixel = self.infer(test_pixel_data)
+            #     for i, pixel in enumerate(result_pixel):
+            #         res_list[i][index] = pixel
             else:
                 print("_____")
                 print(index)
@@ -456,7 +456,9 @@ class IAGMM():
                 self.reorder()
                 self.agd_mat.agd_mixture_model.var_l = 1 / self.agd_mat.agd_mixture_model.s_l
                 self.agd_mat.agd_mixture_model.var_r = 1 / self.agd_mat.agd_mixture_model.s_r
-                result_pixel[index] = self.infer(test_pixel_data)
+                result_pixel = self.infer(test_pixel_data)
+                for i, pixel in enumerate(result_pixel):
+                    res_list[i][index] = pixel
 
 
         # print(img_num_epoch)
@@ -504,8 +506,9 @@ class IAGMM():
         #     #         self.agd_mat.agd_mixture_model.var_l = 1 / self.agd_mat.agd_mixture_model.s_l
         #     #         self.agd_mat.agd_mixture_model.var_r = 1 / self.agd_mat.agd_mixture_model.s_r
         #     #         result_pixel[index] = self.infer(test_pixel_data)
-        time.sleep(10000)
-        result_pixel = result_pixel.reshape((result_pixel.shape[1], result_pixel.shape[0]))
-        for index, result_pixel_value in enumerate(result_pixel):
-            cv.imwrite(self.results_path + '/in%06d' % (index + 300) + '.jpg', result_pixel_value.reshape(self.img_shape[0:2]))
+
+        for index, res_img in enumerate(res_list):
+            cv.imwrite(self.results_path + '/in%06d' % (index + 300) + '.jpg', res_img.reshape(self.img_shape[0:2]))
+
+
 
