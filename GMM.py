@@ -42,6 +42,13 @@ class GMM():
             return True
         else:
             return False
+        # delta = u - x
+        # distance = np.linalg.norm(delta)
+        # norm_stand_div = np.linalg.norm(np.sqrt(sigma))
+        # if distance < 2.5 * norm_stand_div:
+        #     return True
+        # else:
+        #     return False
 
     def train(self, K=6):
         '''
@@ -77,44 +84,39 @@ class GMM():
             for i in range(img.shape[0]):
                 for j in range(img.shape[1]):
                     # Check whether match the existing K Gaussian distributions
-                    flag = 0
+                    match = -1
                     for k in range(K):
                         if self.check(img[i][j], self.mu[i][j][k], self.sigma[i][j][k]):
-                            flag = 1
-                            m = 1
-                            mu = self.mu[i][j][k]
-                            sigma = self.sigma[i][j][k]
-                            x = img[i][j].astype(np.float)
-                            delta = x - mu
-                            rho = self.alpha * mv_norm.pdf(img[i][j], mu, sigma)
-                            self.weight[i][j][k] = self.weight[i][j][k] + self.alpha*(m - self.weight[i][j][k])
-                            self.mu[i][j][k] = mu + rho*delta
-                            self.sigma[i][j][k] = sigma + rho*(np.matmul(delta, delta.T)-sigma)
-                        else:
-                            m=0
-                            self.weight[i][j][k] = self.weight[i][j][k] + self.alpha*(m-self.weight[i][j][k])
+                            match = k
+                            break
+                    # a match found
+                    if match != -1:
+                        mu = self.mu[i][j][match]
+                        sigma = self.sigma[i][j][match]
+                        x = img[i][j].astype(np.float)
+                        delta = x - mu
+                        rho = self.alpha * mv_norm.pdf(img[i][j], mu, sigma)
+                        self.weight[i][j] = (1 - self.alpha) * self.weight[i][j]
+                        self.weight[i][j][match] += self.alpha
+                        self.mu[i][j][match] = mu + rho * delta
+                        self.sigma[i][j][match] = sigma + rho * (np.matmul(delta, delta.T) - sigma)
                     # if none of the K distributions match the current value
                     # the least probable distribution is replaced with a distribution
                     # with current value as its mean, an initially high variance and low rior weight
-                    if flag == 0:
+                    if match == -1:
                         w_list = [self.weight[i][j][k] for k in range(K)]
                         id = w_list.index(min(w_list))
                         # weight keep same, replace mean with current value and set high variance
                         self.mu[i][j][id] = np.array(img[i][j]).reshape(1,3)
                         self.sigma[i][j][id] = np.array(init_sigma)
-                    # normalize the weight
-                    s = sum([self.weight[i][j][k] for k in range(K)])
-                    for k in range(K):
-                        self.weight[i][j][k] /= s
             # print('img:{}'.format(img[100][100]))
             # print('weight:{}'.format(self.weight[100][100]))
-            print(self.sigma[100][100])
             self.reorder()
-            # for i in range(self.K):
-            #     print('u:{}'.format(self.mu[100][100][i]))
+            for i in range(self.K):
+                print('u:{}'.format(self.mu[100][100][i]))
 
 
-    def reorder(self, T=0.75):
+    def reorder(self, T=0.95):
         '''
         reorder the estimated components based on the ratio pi / the norm of standard deviation.
         the first B components are chosen as background components
@@ -135,22 +137,24 @@ class GMM():
                     if cum_weight > T:
                         self.B[i][j] = index + 1
                         break
-
+                # print(self.B[i][j])
+                # if self.B[i][j] == self.K:
+                #     self.B[i][j] = self.K - 1
 
     def infer(self, img):
         '''
         infer whether its background or foregound
         if the pixel is background, both values of rgb will set to 255. Otherwise not change the value
         '''
-        result = np.array(img)
+        result = np.ones(img.shape[0:-1], dtype=int)
         for i in range(img.shape[0]):
             for j in range(img.shape[1]):
                 for k in range(self.B[i][j]):
                     if self.check(img[i][j], self.mu[i][j][k], self.sigma[i][j][k]):
-                        # [0, 0, 0] is black, the background color will be set black
-                        result[i][j] = [0, 0, 0]
+                        # 0 is black, the background color will be set black
+                        result[i][j] = 0
                         break
-                if (result[i][j][0] != 0) and (result[i][j][1] != 0) and (result[i][j][2] != 0):
+                if result[i][j] != 0:
                     # foreground pixel will set white
-                    result[i][j] == [255, 255, 255]
+                    result[i][j] = 255
         return result

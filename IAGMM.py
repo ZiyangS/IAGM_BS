@@ -431,7 +431,6 @@ class IAGMM():
                     self.agd_mat.agd_mixture_model.var_r = 1/self.agd_mat.agd_mixture_model.s_r
                     result_pixel = self.infer(test_pixel_data)
                     for i, pixel in enumerate(result_pixel):
-                        print(i + epoch*(self.img_shape[0]*self.img_shape[1]//10))
                         res_list[i][index + epoch*(self.img_shape[0]*self.img_shape[1]//10)] = pixel
                 else:
                     self.agd_mat.agd_mixture_model.continue_train(pixel_data, train_num=self.train_num)
@@ -440,7 +439,6 @@ class IAGMM():
                     self.agd_mat.agd_mixture_model.var_r = 1 / self.agd_mat.agd_mixture_model.s_r
                     result_pixel = self.infer(test_pixel_data)
                     for i, pixel in enumerate(result_pixel):
-                        print(index + epoch*(self.img_shape[0]*self.img_shape[1]//10))
                         res_list[i][index + epoch * (self.img_shape[0] * self.img_shape[1] // 10)] = pixel
 
 

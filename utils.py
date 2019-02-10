@@ -232,9 +232,9 @@ def draw_indicator(pvec):
 
 def get_pixel_list(img_list):
     height, width, dim = img_list[0].shape
-    pixel_number = (height*width)//10
+    pixel_number = (height*width)//12
     pixel_list = np.zeros((pixel_number, len(img_list), dim))
-    for i in range(height // 10):
+    for i in range(height // 12):
         for j in range(width):
             for index, img in enumerate(img_list):
                 pixel_list[ width*i + j][index] = img[i][j]
