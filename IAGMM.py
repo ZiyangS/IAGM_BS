@@ -329,6 +329,7 @@ class IAGMM():
         self.data_dir = data_dir
         self.results_path = results_path
         self.ROI_path = ROI_path
+
         self.train_num = train_num
         self.test_num = test_num
         self.img_shape = None
@@ -370,7 +371,6 @@ class IAGMM():
                 self.B = index + 1
                 break
 
-
     def infer(self, pixel_list):
         '''
         infer whether its background or foregound
@@ -393,7 +393,8 @@ class IAGMM():
             print("fg number")
             print(detected_fg_num)
         return result
-
+        
+    
 
     def infinte_mixutre_model(self):
         img_list = []
@@ -424,7 +425,6 @@ class IAGMM():
         test_pixel_list = get_pixel_list(results_img_list, eva_number, i_dict, j_dict)
         print(pixel_list.shape)
         print(test_pixel_list.shape)
-
 
         pixel_zip = zip(pixel_list, test_pixel_list)
         for index, (pixel_data, test_pixel_data) in enumerate(pixel_zip):

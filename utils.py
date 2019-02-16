@@ -227,7 +227,6 @@ def draw_indicator(pvec):
             res[j] = np.random.randint(0, pvec.shape[0]) # pick uniformly
     return res
 
-
 def get_pixel_list(img_list, eva_number, i_dict, j_dict):
     height, width, dim = img_list[0].shape
     pixel_list = np.zeros((eva_number, len(img_list), dim))
