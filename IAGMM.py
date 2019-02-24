@@ -6,8 +6,9 @@ import cv2 as cv
 from numpy.linalg import inv, norm, det, slogdet
 from utils import *
 from scipy.sparse import *
+from numba import jit, njit, autojit, vectorize, guvectorize, float64, float32
 
-
+@jit(nogil=True,)
 def check(pixel, mu, s_l, s_r, k=4):
     '''
     check whether a pixel match a Gaussian distribution. Matching means pixel is less than
@@ -123,12 +124,11 @@ class AGD_mixture_model():
                     q = x_k[x_k >= mu_cache[j][k]].shape[0]
                     x_l_sum = np.sum(x_k[x_k < mu_cache[j][k]])
                     x_r_sum = np.sum(x_k[x_k >= mu_cache[j][k]])
-
                     r_n = self.r[k] + p * s_lj[k] + q * s_rj[k]
                     mu_n = (s_lj[k] * x_l_sum + s_rj[k] * x_r_sum + self.r[k] * self.lam[k]) / r_n
                     self.mu[j, k] = draw_normal(mu_n, 1 / r_n)
                 j += 1
-            print(self.mu)
+
             # draw lambda from posterior (depends on mu, M, and r)
             mu_sum = np.sum(self.mu, axis=0)
             loc_n = np.zeros(D)
@@ -136,8 +136,7 @@ class AGD_mixture_model():
             for k in range(D):
                 scale = 1 / (precisiony[k] + self.M * self.r[k])
                 scale_n[k] = scale
-                loc = scale * (muy[k] * precisiony[k] + self.r[k] * mu_sum[k])
-                loc_n[k] = loc
+                loc_n[k] = scale * (muy[k] * precisiony[k] + self.r[k] * mu_sum[k])
             self.lam = draw_MVNormal(loc_n, scale_n)
 
             # draw r from posterior (depnds on M, mu, and lambda)
@@ -150,7 +149,6 @@ class AGD_mixture_model():
             # draw alpha from posterior (depends on M, N)
             self.alpha = draw_alpha(self.M, N)
 
-            t = time.time()
             # draw sj from posterior (depends on mu, c, beta, w)
             for j, nj in enumerate(self.n):
                 Xj = X[np.where(self.c == j), :][0]
@@ -167,7 +165,6 @@ class AGD_mixture_model():
                     x_r = x_k[x_k >= self.mu[j][k]]
                     cumculative_sum_left_equation = np.sum((x_l - self.mu[j][k]) ** 2)
                     cumculative_sum_right_equation = np.sum((x_r - self.mu[j][k]) ** 2)
-
                     # def Metropolis_Hastings_Sampling_posterior_sljk(s_ljk, s_rjk, nj, beta, w, sum):
                     self.s_l[j][k] = Metropolis_Hastings_Sampling_posterior_sljk(s_ljk=self.s_l[j][k], s_rjk=self.s_r[j][k],
                                                                             nj=nj, beta=self.beta_l[k], w=self.w_l[k],
@@ -175,9 +172,21 @@ class AGD_mixture_model():
                     self.s_r[j][k] = Metropolis_Hastings_Sampling_posterior_srjk(s_ljk=self.s_l[j][k], s_rjk=self.s_r[j][k],
                                                                             nj=nj, beta=self.beta_r[k], w=self.w_r[k],
                                                                             sum=cumculative_sum_right_equation)
-            # print("{}: time to complete main analysis = {} sec".format(time.asctime(), time.time() - t))
-            print(self.s_l)
-            print(self.s_r)
+
+            # draw w from posterior (depends on k, beta, D, sj)
+            self.w_l = np.array([np.squeeze(draw_gamma(0.5 * (self.M * self.beta_l[k] + 1), \
+                                                       2 / (
+                                                       vary[k] + self.beta_l[k] * np.sum(self.s_l, axis=0)[k]))) \
+                                 for k in range(D)])
+            self.w_r = np.array([np.squeeze(draw_gamma(0.5 * (self.M * self.beta_r[k] + 1), \
+                                                       2 / (
+                                                       vary[k] + self.beta_r[k] * np.sum(self.s_r, axis=0)[k]))) \
+                                 for k in range(D)])
+
+            # draw beta from posterior (depends on k, s, w)
+            self.beta_l = np.array([draw_beta_ars(self.w_l, self.s_l, self.M, k)[0] for k in range(D)])
+            self.beta_r = np.array([draw_beta_ars(self.w_l, self.s_l, self.M, k)[0] for k in range(D)])
+
             # compute the unrepresented probability
             p_unrep = (self.alpha / (N - 1.0 + self.alpha)) * integral_approx(X, self.lam, self.r, self.beta_l, self.beta_r,
                                                                               self.w_l, self.w_r)
@@ -202,18 +211,6 @@ class AGD_mixture_model():
             # stochastic indicator (we could have a new component)
             self.c = np.hstack(draw_indicator(p_indicators_prior))
 
-            # draw w from posterior (depends on k, beta, D, sj)
-            self.w_l = np.array([np.squeeze(draw_gamma(0.5 * (self.M * self.beta_l[k] + 1), \
-                            2 / (vary[k] + self.beta_l[k] * np.sum(self.s_l, axis=0)[k]))) \
-                            for k in range(D)])
-            self.w_r = np.array([np.squeeze(draw_gamma(0.5 * (self.M * self.beta_r[k] + 1), \
-                            2 / (vary[k] + self.beta_r[k] * np.sum(self.s_r, axis=0)[k]))) \
-                            for k in range(D)])
-
-            # draw beta from posterior (depends on k, s, w)
-            self.beta_l = np.array([draw_beta_ars(self.w_l, self.s_l, self.M, k)[0] for k in range(D)])
-            self.beta_r = np.array([draw_beta_ars(self.w_l, self.s_l, self.M, k)[0] for k in range(D)])
-
             # sort out based on new stochastic indicators
             nij = np.sum(self.c == self.M)  # see if the *new* component has occupancy
             if nij > 0:
@@ -225,6 +222,7 @@ class AGD_mixture_model():
                 self.s_l = np.concatenate((self.s_l, np.reshape(news_l, (1, D))))
                 self.s_r = np.concatenate((self.s_r, np.reshape(news_r, (1, D))))
                 self.M = self.M + 1
+                
             # find the associated number for every components
             self.n = np.array([np.sum(self.c == j) for j in range(self.M)])
 
@@ -256,7 +254,7 @@ class AGD_mixture_model():
         print("{}: time to complete main analysis = {} sec".format(time.asctime(), time.time() - ori_t))
 
 
-    def continue_train(self, X, train_num=300, beta=0.00033):
+    def continue_train(self, X, train_num=300, beta=0.05):
         match_num = 0
         for pixel in X:
             closest_dist = 10000
@@ -280,11 +278,11 @@ class AGD_mixture_model():
                 self.pi = (1 - beta) * self.pi
                 self.pi[match] += beta
 
-                # rho = beta * Asy_Gaussian_pdf(pixel, mu, s_l, s_r)
-                rho = pixel * beta
+                rho = beta * Asy_Gaussian_pdf(pixel, mu, s_l, s_r)
+                # rho = pixel * beta
                 self.mu[match] = mu + rho * delta
-                var_l = np.abs(var_l + rho * (np.matmul(delta, delta.T) - var_l))
-                var_r = np.abs(var_r + rho * (np.matmul(delta, delta.T) - var_r))
+                var_l = np.abs(var_l + rho * (np.matmul(delta, delta.T) - var_l)) + 0.0001
+                var_r = np.abs(var_r + rho * (np.matmul(delta, delta.T) - var_r)) + 0.0001
                 self.s_l[match] = 1/var_l
                 self.s_r[match] = 1/var_r
                 # for k in range(3):
@@ -347,7 +345,7 @@ class IAGMM():
         self.num_of_mix = 0
 
 
-    def reorder(self, T=0.95):
+    def reorder(self, T=0.90):
         '''
         reorder the estimated components based on the ratio pi / ||σ_lj|| + ||σ_rj||, norm of standard deviation.
         the first B components are chosen as background components
