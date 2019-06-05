@@ -308,17 +308,7 @@ class AGD_mixture_model():
                 self.s_r[id] = np.array([0.03, 0.03, 0.03])
 
 
-
-class AGD_Mat():
-    def __init__(self, img_shape, pixels):
-        # for, example, pixels.shape,  300, 3
-        self.agd_mixture_model = AGD_mixture_model(pixels)
-        self.mat = np.array([Asy_Gaussian(np.squeeze(self.agd_mixture_model.mu), np.squeeze(self.agd_mixture_model.s_l),
-                                          np.squeeze(self.agd_mixture_model.s_r)) for m in range(1)] )
-        self.weight = self.agd_mixture_model.pi
-
-
-class IAGMM():
+class IAGM():
     """
     Class for defining a single sample
     infinite asymmetric gaussian distribution(AGD) mixture model
@@ -351,23 +341,24 @@ class IAGMM():
         the first B components are chosen as background components
         the default threshold is 0.95
         '''
-        k_weight = self.agd_mat.agd_mixture_model.pi
-        s_l = self.agd_mat.agd_mixture_model.s_l
-        s_r = self.agd_mat.agd_mixture_model.s_r
+        k_weight = self.agd_mat.pi
+        s_l = self.agd_mat.s_l
+        s_r = self.agd_mat.s_r
         k_norm = [np.linalg.norm(np.sqrt(inv(np.diag(s_l[m])))) + np.linalg.norm(np.sqrt(inv(np.diag(s_r[m]))))
                   for m in range(k_weight.shape[0])]
         ratio = k_weight/k_norm
         descending_order = np.argsort(-ratio)
-        self.agd_mat.agd_mixture_model.pi = k_weight[descending_order]
-        self.agd_mat.agd_mixture_model.mu = self.agd_mat.agd_mixture_model.mu[descending_order]
-        self.agd_mat.agd_mixture_model.s_l = s_l[descending_order]
-        self.agd_mat.agd_mixture_model.s_r = s_r[descending_order]
+        self.agd_mat.pi = k_weight[descending_order]
+        self.agd_mat.mu = self.agd_mat.mu[descending_order]
+        self.agd_mat.s_l = s_l[descending_order]
+        self.agd_mat.s_r = s_r[descending_order]
         cum_weight = 0
         for index, order in enumerate(descending_order):
-            cum_weight += self.agd_mat.agd_mixture_model.pi[index]
+            cum_weight += self.agd_mat.pi[index]
             if cum_weight > T:
                 self.B = index + 1
                 break
+
 
     def infer(self, pixel_list):
         '''
@@ -375,7 +366,7 @@ class IAGMM():
         if the pixel is background, both values of rgb will set to 255. Otherwise not change the value
         '''
         result = np.ones((self.test_num + 1 - self.train_num), dtype=int)
-        mixture_model = self.agd_mat.agd_mixture_model
+        mixture_model = self.agd_mat
         detected_fg_num = 0
         for index, pixel in enumerate(pixel_list):
             for k in range(self.B):
@@ -392,9 +383,8 @@ class IAGMM():
             print(detected_fg_num)
         return result
         
-    
 
-    def infinte_mixutre_model(self):
+    def model_training(self):
         img_list = []
         results_img_list = []
         # file numbers are from 1 to train_number
@@ -431,14 +421,14 @@ class IAGMM():
                 print(index)
                 print([i_dict[index]])
                 print([j_dict[index]])
-                self.agd_mat = AGD_Mat(self.img_shape, pixel_data)
-                self.agd_mat.agd_mixture_model.train(pixel_data)
-                # for i in range(self.agd_mat.agd_mixture_model.M):
-                #     self.agd_mat.agd_mixture_model.s_l[i] = np.array([30, 30 ,30])
-                #     self.agd_mat.agd_mixture_model.s_r[i] = np.array([0.03, 0.03 ,0.03])
+                self.agd_mat = AGD_mixture_model(pixel_data)
+                self.agd_mat.train(pixel_data)
+                # for i in range(self.agd_mat.M):
+                #     self.agd_mat.s_l[i] = np.array([30, 30 ,30])
+                #     self.agd_mat.s_r[i] = np.array([0.03, 0.03 ,0.03])
                 self.reorder()
-                self.agd_mat.agd_mixture_model.var_l = 1/self.agd_mat.agd_mixture_model.s_l
-                self.agd_mat.agd_mixture_model.var_r = 1/self.agd_mat.agd_mixture_model.s_r
+                self.agd_mat.var_l = 1/self.agd_mat.s_l
+                self.agd_mat.var_r = 1/self.agd_mat.s_r
                 result_pixel = self.infer(test_pixel_data)
                 for i, pixel in enumerate(result_pixel):
                     res_list[i][i_dict[index]][j_dict[index]] = pixel
@@ -447,10 +437,10 @@ class IAGMM():
                 print(index)
                 print([i_dict[index]])
                 print([j_dict[index]])
-                self.agd_mat.agd_mixture_model.continue_train(pixel_data)
+                self.agd_mat.continue_train(pixel_data)
                 self.reorder()
-                self.agd_mat.agd_mixture_model.var_l = 1 / self.agd_mat.agd_mixture_model.s_l
-                self.agd_mat.agd_mixture_model.var_r = 1 / self.agd_mat.agd_mixture_model.s_r
+                self.agd_mat.var_l = 1 / self.agd_mat.s_l
+                self.agd_mat.var_r = 1 / self.agd_mat.s_r
                 result_pixel = self.infer(test_pixel_data)
                 for i, pixel in enumerate(result_pixel):
                     res_list[i][i_dict[index]][j_dict[index]] = pixel

@@ -1,5 +1,4 @@
-from IAGMM import IAGMM
-import glob
+from IAGM import IAGM
 import cv2 as cv
 
 if __name__ == '__main__':
@@ -122,5 +121,5 @@ if __name__ == '__main__':
     results_path = r'./results/' + category_path + '/' + video_path
     ROI_path = r'./dataset/' + category_path + '/' + video_path + '/ROI.bmp'
 
-    iagmm = IAGMM(data_dir=dataset_path, results_path=results_path, ROI_path=ROI_path, train_num=train_num, test_num=test_num)
-    iagmm.infinte_mixutre_model()
+    iagm = IAGM(data_dir=dataset_path, results_path=results_path, ROI_path=ROI_path, train_num=train_num, test_num=test_num)
+    iagm.model_training()
